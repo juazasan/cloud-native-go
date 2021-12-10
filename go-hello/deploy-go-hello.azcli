@@ -1,0 +1,84 @@
+#Bootstrap infrastructure
+
+az extension add \
+  --source https://workerappscliextension.blob.core.windows.net/azure-cli-extension/containerapp-0.2.0-py2.py3-none-any.whl
+
+az provider register --namespace Microsoft.Web
+
+RESOURCE_GROUP="my-container-apps"
+LOCATION="canadacentral"
+LOG_ANALYTICS_WORKSPACE="my-container-apps-logs"
+CONTAINERAPPS_ENVIRONMENT="my-environment"
+
+az group create \
+  --name $RESOURCE_GROUP \
+  --location "$LOCATION"
+
+az monitor log-analytics workspace create \
+  --resource-group $RESOURCE_GROUP \
+  --workspace-name $LOG_ANALYTICS_WORKSPACE
+
+LOG_ANALYTICS_WORKSPACE_CLIENT_ID=`az monitor log-analytics workspace show --query customerId -g $RESOURCE_GROUP -n $LOG_ANALYTICS_WORKSPACE --out tsv`
+
+LOG_ANALYTICS_WORKSPACE_CLIENT_SECRET=`az monitor log-analytics workspace get-shared-keys --query primarySharedKey -g $RESOURCE_GROUP -n $LOG_ANALYTICS_WORKSPACE --out tsv`
+
+az containerapp env create \
+  --name $CONTAINERAPPS_ENVIRONMENT \
+  --resource-group $RESOURCE_GROUP \
+  --logs-workspace-id $LOG_ANALYTICS_WORKSPACE_CLIENT_ID \
+  --logs-workspace-key $LOG_ANALYTICS_WORKSPACE_CLIENT_SECRET \
+  --location "$LOCATION"
+
+# Deploy hello-world app
+
+az containerapp create \
+  --name my-container-app \
+  --resource-group $RESOURCE_GROUP \
+  --environment $CONTAINERAPPS_ENVIRONMENT \
+  --image mcr.microsoft.com/azuredocs/containerapps-helloworld:latest \
+  --target-port 80 \
+  --ingress 'external' \
+  --query configuration.ingress.fqdn
+
+# Deploy go-hello from Public GitHub Container Registry
+
+az containerapp create \
+  --name go-hello-github \
+  --resource-group $RESOURCE_GROUP \
+  --environment $CONTAINERAPPS_ENVIRONMENT \
+  --image ghcr.io/asw101/hello:latest \
+  --target-port 80 \
+  --ingress 'external' \
+  --query configuration.ingress.fqdn
+
+# Deploy go-hello from Azure Container Registry
+
+az acr create \
+  --name gohellocr \
+  --resource-group $RESOURCE_GROUP \
+  --location $LOCATION \
+  --sku Basic
+
+az acr update \
+  --name gohellocr \
+  --resource-group $RESOURCE_GROUP \
+  --admin-enabled true
+
+az acr build \
+  --registry gohellocr \
+  --resource-group $RESOURCE_GROUP \
+  --image gohellocr/gohellocr:latest \
+  .
+
+az containerapp create \
+  --name go-hello-acr \
+  --resource-group $RESOURCE_GROUP \
+  --environment $CONTAINERAPPS_ENVIRONMENT \
+  --image gohellocr.azurecr.io/gohellocr/gohellocr:latest \
+  --registry-login-server gohellocr.azurecr.io \
+  --registry-username gohellocr \
+  --registry-password $ACR_PASSWORD \
+  --target-port 8080 \
+  --ingress 'external' \
+  --query configuration.ingress.fqdn
+

@@ -11,7 +11,7 @@ import (
 )
 
 func main() {
-	listenAddr := ":80"
+	listenAddr := ":8080"
 	if val := os.Getenv("LISTEN_ADDR"); val != "" {
 		listenAddr = val
 	}
